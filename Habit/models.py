@@ -12,7 +12,7 @@ from .tasks import send_telegram_reminder
 
 class Habit(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="habits")
-    place = models.CharField(max_length=255)
+    place = models.CharField(max_length=255, verbose_name='Место')
     time = models.TimeField(verbose_name="Время")
     action = models.CharField(max_length=255, verbose_name="Действие")
     is_nice = models.BooleanField(default=False, verbose_name="Приятная привычка")
