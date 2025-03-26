@@ -6,11 +6,11 @@ from rest_framework import permissions
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Snippets API",
+        title="Habits API",
         default_version="v1",
-        description="Test description",
+        description="API для управления привычками",
         terms_of_service="https://www.google.com/policies/terms/",
-        contact=openapi.Contact(email="contact@snippets.local"),
+        contact=openapi.Contact(email="contact@habits.local"),
         license=openapi.License(name="BSD License"),
     ),
     public=True,
@@ -28,5 +28,6 @@ urlpatterns = [
         name="schema-swagger-ui",
     ),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
-    path('api/', include('Habit.urls')),
+    path('api/habits/', include('Habit.urls')),
+    path('api/users/', include('users.urls')),
 ]
