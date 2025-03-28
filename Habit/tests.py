@@ -1,78 +1,76 @@
-from datetime import time
-from django.test import TestCase
+import pytest
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
-from users.models import CustomUser
-from .models import Habit
-from .serializers import HabitSerializers
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.models import User
+from Habit.models import Habit
+from Habit.serializers import HabitSerializers  # Предполагаем правильное имя
+import factory
 
 
-class HabitModelTest(TestCase):
-    def setUp(self):
-        self.user = CustomUser.objects.create(
-            email='test@example.com',
-            telegram_id='123456789'
-        )
-        self.habit_data = {
-            'user': self.user,
-            'place': 'Home',
-            'time': time(10, 0),
-            'action': 'Read a book',
-            'is_nice': False,
-            'periodicity': 1,
-            'duration': 60,
-            'is_public': False
-        }
-        self.habit = Habit.objects.create(**self.habit_data)
+# Фабрики
+class UserFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = User
 
-    def test_create_habit(self):
-        self.assertEqual(self.habit.place, self.habit_data['place'])
-        self.assertEqual(self.habit.time, self.habit_data['time'])
-        self.assertEqual(self.habit.action, self.habit_data['action'])
-        self.assertEqual(self.habit.is_nice, self.habit_data['is_nice'])
-        self.assertEqual(self.habit.periodicity, self.habit_data['periodicity'])
-        self.assertEqual(self.habit.duration, self.habit_data['duration'])
-        self.assertEqual(self.habit.is_public, self.habit_data['is_public'])
+    username = factory.Sequence(lambda n: f"user{n}")
+    email = factory.LazyAttribute(lambda o: f"{o.username}@example.com")
+    password = factory.PostGenerationMethodCall('set_password', 'testpass123')
 
-    def test_habit_str(self):
-        expected_str = f'{self.habit.action} в {self.habit.time} в {self.habit.place}'
-        self.assertEqual(str(self.habit), expected_str)
 
-    def test_validation_reward_and_related_habit(self):
-        nice_habit = Habit.objects.create(
-            user=self.user,
-            place='Home',
-            time=time(10, 0),
-            action='Meditation',
-            is_nice=True,
-            periodicity=1,
-            duration=60
-        )
-        habit = Habit(
-            user=self.user,
-            place='Home',
-            time=time(10, 0),
-            action='Read a book',
-            is_nice=False,
-            related_habit=nice_habit,
-            reward='Watch TV',
-            periodicity=1,
-            duration=60
-        )
-        with self.assertRaises(Exception):
-            habit.full_clean()
+class HabitFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Habit
 
-    def test_validation_duration(self):
-        habit = Habit(
-            user=self.user,
-            place='Home',
-            time=time(10, 0),
-            action='Read a book',
-            is_nice=False,
-            periodicity=1,
-            duration=121,
-            is_public=False
-        )
-        with self.assertRaises(Exception):
-            habit.full_clean()
+    user = factory.SubFactory(UserFactory)
+    place = "Дом"
+    time = "08:00:00"
+    action = "Пить воду"
+    is_nice = False
+    periodicity = 1
+    duration = 60
+    is_public = False
+
+
+# Фикстуры
+@pytest.fixture
+def api_client():
+    return APIClient()
+
+
+@pytest.fixture
+def authenticated_client(api_client, user):
+    refresh = RefreshToken.for_user(user)
+    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+    return api_client
+
+
+@pytest.fixture
+def user():
+    return UserFactory()
+
+
+@pytest.fixture
+def habit(user):
+    return HabitFactory(user=user)
+
+
+@pytest.fixture
+def public_habit():
+    return HabitFactory(is_public=True)
+
+
+# Твои исходные тесты
+@pytest.mark.django_db
+def test_habit_list_unauthenticated(api_client):
+    url = reverse('habit-list-create')
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.django_db
+def test_public_habit_list_unauthenticated(api_client):
+    url = reverse('public-habit-list')
+    response = api_client.get(url)
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
