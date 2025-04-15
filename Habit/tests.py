@@ -1,78 +1,100 @@
-from datetime import time
+import unittest
+from unittest.mock import patch
 from django.test import TestCase
-from django.urls import reverse
-from rest_framework import status
-from rest_framework.test import APITestCase
-from users.models import CustomUser
-from .models import Habit
-from .serializers import HabitSerializers
+from django.contrib.auth import get_user_model
+from Habit.models import Habit
+from datetime import time
+from django.core.exceptions import ValidationError
+
+User = get_user_model()
 
 
 class HabitModelTest(TestCase):
     def setUp(self):
-        self.user = CustomUser.objects.create(
-            email='test@example.com',
-            telegram_id='123456789'
-        )
-        self.habit_data = {
-            'user': self.user,
-            'place': 'Home',
-            'time': time(10, 0),
-            'action': 'Read a book',
-            'is_nice': False,
-            'periodicity': 1,
-            'duration': 60,
-            'is_public': False
-        }
-        self.habit = Habit.objects.create(**self.habit_data)
+        self.user = User.objects.create_user(username="testuser", email="testuser@example.com", password="testpass")
 
-    def test_create_habit(self):
-        self.assertEqual(self.habit.place, self.habit_data['place'])
-        self.assertEqual(self.habit.time, self.habit_data['time'])
-        self.assertEqual(self.habit.action, self.habit_data['action'])
-        self.assertEqual(self.habit.is_nice, self.habit_data['is_nice'])
-        self.assertEqual(self.habit.periodicity, self.habit_data['periodicity'])
-        self.assertEqual(self.habit.duration, self.habit_data['duration'])
-        self.assertEqual(self.habit.is_public, self.habit_data['is_public'])
+    @patch("Habit.tasks.send_telegram_reminder.apply_async")
+    def test_periodicity_validation(self, mock_task):
+        """Тест валидации: периодичность от 1 до 7 дней"""
+        with self.assertRaisesMessage(ValidationError, "Переодичность должна быть от 1 до 7 дней"):
+            habit = Habit(
+                user=self.user,
+                place="дома",
+                time=time(8, 0),
+                action="зарядка",
+                is_nice=False,
+                periodicity=8,
+                duration=60
+            )
+            habit.save()
+        mock_task.assert_not_called()
 
-    def test_habit_str(self):
-        expected_str = f'{self.habit.action} в {self.habit.time} в {self.habit.place}'
-        self.assertEqual(str(self.habit), expected_str)
+    @patch("Habit.tasks.send_telegram_reminder.apply_async")
+    def test_pleasant_habit_validation(self, mock_task):
+        """Тест валидации: у приятной привычки не может быть reward"""
+        with self.assertRaisesMessage(ValidationError, "У приятной привычки не может быть вознаграждения или связанной привычки"):
+            habit = Habit(
+                user=self.user,
+                place="дома",
+                time=time(9, 0),
+                action="принять ванну",
+                is_nice=True,
+                reward="чай",
+                periodicity=1,
+                duration=60
+            )
+            habit.save()
+        mock_task.assert_not_called()
 
-    def test_validation_reward_and_related_habit(self):
-        nice_habit = Habit.objects.create(
+    @patch("Habit.tasks.send_telegram_reminder.apply_async")
+    def test_habit_reward_and_related_habit_validation(self, mock_task):
+        """Тест валидации: нельзя указать и reward, и related_habit"""
+        pleasant_habit = Habit(
             user=self.user,
-            place='Home',
+            place="дома",
             time=time(10, 0),
-            action='Meditation',
+            action="отдых",
             is_nice=True,
             periodicity=1,
             duration=60
         )
-        habit = Habit(
-            user=self.user,
-            place='Home',
-            time=time(10, 0),
-            action='Read a book',
-            is_nice=False,
-            related_habit=nice_habit,
-            reward='Watch TV',
-            periodicity=1,
-            duration=60
-        )
-        with self.assertRaises(Exception):
-            habit.full_clean()
+        pleasant_habit.save()
 
-    def test_validation_duration(self):
+        with self.assertRaisesMessage(ValidationError, "Нельзя указывать одновременно вознаграждение и связанную привычку"):
+            habit = Habit(
+                user=self.user,
+                place="парк",
+                time=time(7, 0),
+                action="прогулка",
+                is_nice=False,
+                related_habit=pleasant_habit,
+                reward="мороженое",
+                periodicity=1,
+                duration=60
+            )
+            habit.save()
+        mock_task.assert_called_once()
+
+    @patch("Habit.tasks.send_telegram_reminder.apply_async")
+    def test_habit_creation_success(self, mock_task):
+        """Тест успешного создания привычки с минимальными данными"""
         habit = Habit(
             user=self.user,
-            place='Home',
-            time=time(10, 0),
-            action='Read a book',
+            place="офис",
+            time=time(12, 0),
+            action="обед",
             is_nice=False,
             periodicity=1,
-            duration=121,
-            is_public=False
+            duration=30
         )
-        with self.assertRaises(Exception):
-            habit.full_clean()
+        habit.save()
+        self.assertEqual(habit.action, "обед")
+        self.assertEqual(habit.place, "офис")
+        self.assertEqual(habit.duration, 30)
+        self.assertFalse(habit.is_nice)
+        self.assertEqual(str(habit), "обед в 12:00:00 в офис")
+        mock_task.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

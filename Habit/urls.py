@@ -4,6 +4,6 @@ from .views import HabitListCreateView, HabitRetrieveUpdateDestroyView, PublicHa
 
 urlpatterns = [
     path('habits/', HabitListCreateView.as_view(), name='habit-list-create'),
-    path('habits/<int:pk>/', HabitRetrieveUpdateDestroyView.as_view(), name='habit-detail'),
-    path('public-habits/', PublicHabitListView.as_view(), name='public-habits'),
+    path('<int:pk>/', HabitRetrieveUpdateDestroyView.as_view(), name='habit-detail'),
+    path('public/', PublicHabitListView.as_view(), name='public-habit-list'),
 ]
