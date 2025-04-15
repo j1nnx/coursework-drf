@@ -72,6 +72,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 #     }
 # }
 
+
 if os.getenv("TEST_ENV"):
     DATABASES = {
         "default": {
